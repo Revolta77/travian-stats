@@ -1,0 +1,153 @@
+:root {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.5;
+  color: #0f172a;
+  background: #f8fafc;
+}
+
+html.dark {
+  color-scheme: dark;
+  color: #e2e8f0;
+  background: #020617;
+}
+
+html.dark body {
+  background: #020617;
+}
+
+html.dark #app {
+  background: #020617;
+}
+
+/* Hlavička (scoped štýly v App.vue + svetlé fallbacky) — výslovne pod .dark */
+html.dark .layout > .header {
+  background: var(--p-content-background, var(--p-surface-950, #020617));
+  border-bottom-color: var(--p-content-border-color, #334155);
+}
+
+html.dark .layout .theme-label {
+  color: var(--p-text-muted-color, #94a3b8);
+}
+
+html.dark .layout .nav-link {
+  color: var(--p-text-color, #e2e8f0);
+}
+
+html.dark .layout .nav-link:hover,
+html.dark .layout .nav-link--active {
+  color: var(--p-primary-color, #60a5fa);
+}
+
+/* Admin layout — ľavý panel (scoped štýly mali svetlé fallbacky) */
+html.dark .admin-layout .aside {
+  background: var(--p-surface-900, #0f172a);
+  border-right-color: var(--p-content-border-color, #334155);
+}
+
+html.dark .admin-layout .aside-title {
+  color: var(--p-text-muted-color, #94a3b8);
+}
+
+html.dark .admin-layout .aside-link {
+  color: var(--p-text-color, #e2e8f0);
+}
+
+html.dark .admin-layout .aside-link:hover {
+  background: var(--p-content-hover-background, var(--p-surface-800, #1e293b));
+}
+
+html.dark .admin-layout .aside-link--active {
+  background: var(--p-highlight-background, rgba(59, 130, 246, 0.22));
+  color: var(--p-primary-color, #60a5fa);
+}
+
+html.dark .admin-layout .admin-body {
+  background: var(--p-content-background, var(--p-surface-950, #020617));
+}
+
+/*
+ * PrimeVue generuje dark tokeny len pre selektor z darkModeSelector (napr. `.dark`).
+ * Doplnkové pravidlá pre DataTable / formuláre, aby boli konzistentné s tmavou paletou.
+ */
+html.dark .p-datatable,
+html.dark .p-datatable-table-container {
+  background: var(--p-content-background);
+  color: var(--p-text-color);
+}
+
+html.dark .p-datatable .p-datatable-thead > tr > th {
+  background: var(--p-datatable-header-cell-background, var(--p-surface-800));
+  color: var(--p-datatable-header-cell-color, var(--p-text-color));
+  border-color: var(--p-datatable-header-cell-border-color, var(--p-content-border-color));
+}
+
+html.dark .p-datatable .p-datatable-tbody > tr > td {
+  background: var(--p-datatable-row-background, var(--p-content-background));
+  color: var(--p-datatable-row-color, var(--p-text-color));
+  border-color: var(--p-datatable-body-cell-border-color, var(--p-content-border-color));
+}
+
+html.dark .p-datatable .p-datatable-tbody > tr.p-row-odd > td {
+  background: var(--p-datatable-row-striped-background, var(--p-surface-900));
+}
+
+html.dark .p-paginator {
+  background: var(--p-content-background);
+  color: var(--p-text-color);
+  border-color: var(--p-content-border-color);
+}
+
+html.dark .p-inputtext,
+html.dark .p-inputnumber-input {
+  background: var(--p-form-field-background, var(--p-surface-950));
+  color: var(--p-form-field-color, var(--p-text-color));
+  border-color: var(--p-form-field-border-color, var(--p-content-border-color));
+}
+
+html.dark .p-select,
+html.dark .p-select-label {
+  background: var(--p-select-background, var(--p-form-field-background, var(--p-surface-950)));
+  color: var(--p-select-color, var(--p-text-color));
+  border-color: var(--p-select-border-color, var(--p-content-border-color));
+}
+
+html.dark .p-select-overlay,
+html.dark .p-select-list-container,
+html.dark .p-popover,
+html.dark .p-select-list {
+  background: var(--p-overlay-popover-background, var(--p-surface-900));
+  color: var(--p-text-color);
+  border-color: var(--p-content-border-color);
+}
+
+html.dark .p-select-option {
+  color: var(--p-text-color);
+}
+
+html.dark .p-select-option:not(.p-select-option-selected):not(.p-disabled):hover {
+  background: var(--p-content-hover-background, var(--p-surface-800));
+}
+
+html.dark .p-select-option.p-select-option-selected {
+  background: var(--p-highlight-background);
+  color: var(--p-highlight-color);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.5rem;
+}
