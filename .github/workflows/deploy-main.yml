@@ -99,7 +99,6 @@ jobs:
       - name: Prepare Laravel package for upload
         run: |
           rm -rf laravel/vendor
-          rm -f laravel/.env
           rm -rf laravel/node_modules
           rm -rf laravel/tests
           rm -f laravel/phpunit.xml
