@@ -117,6 +117,8 @@ jobs:
           port: ${{ env.SSH_PORT }}
           source: "vue/dist/*"
           target: "/home/travian-stats.run.place/public_html/"
+          strip_components: 2
+          debug: true
 
       - name: Copy Laravel via SCP
         uses: appleboy/scp-action@v0.1.7
@@ -127,6 +129,8 @@ jobs:
           port: ${{ env.SSH_PORT }}
           source: "laravel/*"
           target: "/home/travian-stats.run.place/public_html/laravel/"
+          strip_components: 1
+          debug: true
 
       - name: Run post-deploy on server via SSH
         uses: appleboy/ssh-action@v1
