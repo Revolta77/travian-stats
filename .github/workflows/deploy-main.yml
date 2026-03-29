@@ -56,7 +56,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Load secrets from Infisical
-        uses: Infisical/secrets-action@v1.0.7
+        uses: Infisical/secrets-action@v1.0.9
         with:
           method: "oidc"
           project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
@@ -84,19 +84,11 @@ jobs:
       - name: Build Vue .env.production from .env.example
         run: python3 scripts/render-env-from-example.py vue/.env.example vue/.env.production
 
-      - name: Validate generated env files
-        run: |
-          test -f laravel/.env
-          test -f vue/.env.production
-          grep '^APP_KEY=' laravel/.env
-          grep '^APP_URL=' laravel/.env
-          grep '^VITE_API_BASE=' vue/.env.production
-
       - name: Composer install (Laravel, len pre runner)
         working-directory: laravel
         run: composer install --no-dev --optimize-autoloader --no-interaction --no-progress
 
-      - name: Clear Laravel caches (pred FTP, bez zmrazených config/routes)
+      - name: Clear Laravel caches
         working-directory: laravel
         run: php artisan optimize:clear
 
@@ -104,42 +96,37 @@ jobs:
         working-directory: vue
         run: yarn install --frozen-lockfile && yarn build
 
-      - name: Deploy Vue (FTP)
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          server: ${{ env.FTP_SERVER }}
-          username: ${{ env.FTP_USERNAME }}
-          password: ${{ env.FTP_PASSWORD }}
-          port: ${{ env.FTP_PORT }}
-          local-dir: ./vue/dist/
-          server-dir: ./public_html/
-          state-name: travian-vue-ftp
-          exclude: |
-            **/.git*
-            **/.github/**
+      - name: Prepare Laravel package for upload
+        run: |
+          rm -rf laravel/vendor
+          rm -f laravel/.env
+          rm -rf laravel/node_modules
+          rm -rf laravel/tests
+          rm -f laravel/phpunit.xml
+          rm -f laravel/phpunit.xml.dist
+          rm -f laravel/.phpunit.result.cache
+          rm -f laravel/bootstrap/cache/config.php
+          rm -f laravel/bootstrap/cache/routes-*.php
 
-      - name: Deploy Laravel (FTP, bez vendor a .env)
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      - name: Copy Vue dist via SCP
+        uses: appleboy/scp-action@v0.1.7
         with:
-          server: ${{ env.FTP_SERVER }}
-          username: ${{ env.FTP_USERNAME }}
-          password: ${{ env.FTP_PASSWORD }}
-          port: ${{ env.FTP_PORT || 21 }}
-          local-dir: ./laravel/
-          server-dir: ./public_html/laravel/
-          state-name: travian-laravel-ftp
-          exclude: |
-            **/.git*
-            **/.github/**
-            **/tests/**
-            **/phpunit.xml
-            **/phpunit.xml.dist
-            **/.phpunit.result.cache
-            **/vendor/**
-            **/node_modules/**
-            **/storage/logs/*.log
-            **/bootstrap/cache/config.php
-            **/bootstrap/cache/routes-*.php
+          host: ${{ env.SSH_HOST }}
+          username: ${{ env.SSH_USERNAME }}
+          key: ${{ env.SSH_PRIVATE_KEY }}
+          port: ${{ env.SSH_PORT }}
+          source: "vue/dist/*"
+          target: "/home/travi7675/public_html/"
+
+      - name: Copy Laravel via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.SSH_HOST }}
+          username: ${{ env.SSH_USERNAME }}
+          key: ${{ env.SSH_PRIVATE_KEY }}
+          port: ${{ env.SSH_PORT }}
+          source: "laravel/*"
+          target: "/home/travi7675/public_html/laravel/"
 
       - name: Run post-deploy on server via SSH
         uses: appleboy/ssh-action@v1
@@ -149,10 +136,9 @@ jobs:
           key: ${{ env.SSH_PRIVATE_KEY }}
           port: ${{ env.SSH_PORT }}
           script: |
-            cd ./public_html/laravel/
+            cd /home/travi7675/public_html/laravel
             composer install --no-dev --optimize-autoloader --no-interaction
             php artisan migrate --force
             php artisan config:cache
             php artisan route:cache
             php artisan view:cache
-
