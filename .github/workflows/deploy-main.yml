@@ -8,7 +8,11 @@
 #   TOKEN_MIGRATION, TOKEN_CRON (voliteľné; do .env na server; TOKEN_MIGRATION pre ručný / externý HTTP migrate)
 #   VITE_API_BASE, VITE_APP_BASE (voliteľné, default /)
 #   FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, FTP_PORT (alebo 21)
-#   FTP_DOMAIN — názov priečinka na FTP (napr. example.com), výsledná cesta: {FTP_DOMAIN}/htdocs/vue|laravel
+#   server-dir v krokoch FTP musí sedieť s tvojou štruktúrou na hostingu (tu: vue → ./htdocs/, laravel → ./htdocs/laravel/).
+#
+# Vendor: nie je v kroku „Deploy Laravel“ (rýchlejší diff). Samostatný FTP krok nahrá ./laravel/vendor/ →
+#   ./htdocs/laravel/vendor/ (súbory priamo, bez ZIP/unzip na serveri). Vlastný state-name = inkrementálna sync.
+# Pred FTP: optimize:clear; z Laravel uploadu sú vylúčené vendor a zmrazené bootstrap/cache súbory.
 #
 name: Deploy main
 
@@ -76,6 +80,10 @@ jobs:
         working-directory: laravel
         run: composer install --no-dev --optimize-autoloader --no-interaction --no-progress
 
+      - name: Clear Laravel caches (pred FTP, bez zmrazených config/routes)
+        working-directory: laravel
+        run: php artisan optimize:clear
+
       - name: Yarn install & build (Vue)
         working-directory: vue
         run: yarn install --frozen-lockfile && yarn build
@@ -115,7 +123,22 @@ jobs:
             **/node_modules/**
             **/storage/logs/*.log
             **/vendor/**
+            **/bootstrap/cache/config.php
+            **/bootstrap/cache/routes-*.php
 
-      - name: Run migrations (Artisan na runneri)
-        working-directory: laravel
-        run: php artisan migrate --force
+      - name: Deploy Laravel vendor (FTP)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ secrets.FTP_PORT || 21 }}
+          local-dir: ./laravel/vendor/
+          server-dir: ./htdocs/laravel/vendor/
+          state-name: travian-vendor-ftp
+          exclude: |
+            **/.git*
+
+#      - name: Run migrations (Artisan na runneri)
+#        working-directory: laravel
+#        run: php artisan migrate --force
