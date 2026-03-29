@@ -221,6 +221,8 @@ export default {
     preparingDownload: 'Download wird vorbereitet…',
     cancelled: 'Abgebrochen.',
     networkError: 'Netzwerkfehler.',
+    errFetchFailedDetail:
+      'Die Verbindung zur API wurde abgebrochen (Browser meldet „Failed to fetch“). Laravel protokolliert oft nichts, weil es ein Transportproblem ist oder der Server die Verbindung schließt. Prüfen: DevTools → Network (rot = Timeout/Reset), auf dem Hosting fastcgi_read_timeout / proxy_read_timeout und PHP max_execution_time erhöhen, API-URL und HTTPS prüfen. Steht „map_sql: import began“ im Log, hat das Backend begonnen und die Verbindung brach später ab.',
     missingAuth: 'Nicht angemeldet.',
     httpError: 'HTTP {status}',
   },

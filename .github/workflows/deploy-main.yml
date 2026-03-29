@@ -1,18 +1,37 @@
-# Nasadenie na FTP po pushi do main.
+# Nasadenie na FTP po pushi do main
 #
-# GitHub → Settings → Secrets and variables → Actions — pridaj:
-#   APP_KEY, APP_URL, ADMIN_EMAIL, ADMIN_PASSWORD
-#   DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD
-#     → musia umožniť pripojenie z GitHub runnera (verejný DB host / remote MySQL).
-#       Ak hosting dáva len localhost, migrácie na runneri neprebehnú — vtedy ostáva /api/run_migrate na serveri.
-#   TOKEN_MIGRATION, TOKEN_CRON (voliteľné; do .env na server; TOKEN_MIGRATION pre ručný / externý HTTP migrate)
-#   VITE_API_BASE, VITE_APP_BASE (voliteľné, default /)
-#   FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, FTP_PORT (alebo 21)
-#   server-dir v krokoch FTP musí sedieť s tvojou štruktúrou na hostingu (tu: vue → ./htdocs/, laravel → ./htdocs/laravel/).
+# Runner: composer + yarn build + optimize:clear (potrebuje lokálny vendor a .env).
+# Na FTP sa vendor a .env NENahrávajú — na serveri po deployi spusti:
+#   cd …/laravel && composer install --no-dev --optimize-autoloader --no-interaction
+#   php artisan migrate --force   # ak nebeží z runnera
+#   php artisan config:cache && php artisan route:cache && php artisan view:cache
+# .env na produkcii drž mimo FTP (napr. Infisical → súbor na serveri).
 #
-# Vendor: nie je v kroku „Deploy Laravel“ (rýchlejší diff). Samostatný FTP krok nahrá ./laravel/vendor/ →
-#   ./htdocs/laravel/vendor/ (súbory priamo, bez ZIP/unzip na serveri). Vlastný state-name = inkrementálna sync.
-# Pred FTP: optimize:clear; z Laravel uploadu sú vylúčené vendor a zmrazené bootstrap/cache súbory.
+# === GitHub: Settings → Secrets and variables → Actions ===
+#
+# Povinné pre tento workflow:
+#   FTP_SERVER, FTP_USERNAME, FTP_PASSWORD
+#   FTP_PORT (voliteľné, default 21)
+#
+# Pre krok „Write Laravel .env“ (iba na runneri, neuploaduje sa):
+#   APP_KEY, APP_URL
+#   ADMIN_EMAIL, ADMIN_PASSWORD  (ak ich .env.example vyžaduje)
+#   DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD  (ak spúšťaš artisan na runneri)
+#
+# Pre build Vue na runneri:
+#   VITE_API_BASE   (napr. /api alebo https://tvoja-domena.tld/api)
+#   VITE_APP_BASE   (voliteľné, default /)
+#
+# Voliteľné:
+#   TOKEN_MIGRATION, TOKEN_CRON
+#
+# === Na serveri (mimo GitHub) ===
+#   • Jednorazovo: v koreni Laravelu vytvor .env (Infisical CLI, manuálne, …).
+#   • Po každom deployi z tohto workflow: composer install --no-dev (lebo vendor chýba).
+#   • Uprav server-dir nižšie, ak nemáš ./htdocs/ a ./htdocs/laravel/.
+#
+# Migrácie z runnera (DB musí byť dostupná z internetu):
+#   Odkomentuj krok „Run migrations“ a nastav DB_* secrets.
 #
 name: Deploy main
 
@@ -24,27 +43,25 @@ concurrency:
   group: deploy-main
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      APP_KEY: ${{ secrets.APP_KEY }}
-      APP_URL: ${{ secrets.APP_URL }}
-      APP_ENV: production
-      APP_DEBUG: "false"
-      ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
-      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-      DB_HOST: ${{ secrets.DB_HOST }}
-      DB_PORT: ${{ secrets.DB_PORT }}
-      DB_DATABASE: ${{ secrets.DB_DATABASE }}
-      DB_USERNAME: ${{ secrets.DB_USERNAME }}
-      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      TOKEN_MIGRATION: ${{ secrets.TOKEN_MIGRATION }}
-      TOKEN_CRON: ${{ secrets.TOKEN_CRON }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Load secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.7
+        with:
+          method: "oidc"
+          project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
+          env-slug: ${{ vars.INFISICAL_ENV_SLUG }}
+          identity-id: ${{ vars.INFISICAL_IDENTITY_ID }}
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -61,22 +78,21 @@ jobs:
           cache: yarn
           cache-dependency-path: vue/yarn.lock
 
-      - name: Write Laravel .env
-        run: python3 scripts/write-deploy-laravel-env.py
+      - name: Build Laravel .env from .env.example
+        run: python3 scripts/render-env-from-example.py laravel/.env.example laravel/.env
 
-      - name: Write Vue .env.production
-        working-directory: vue
-        env:
-          VITE_API_BASE: ${{ secrets.VITE_API_BASE }}
-          VITE_APP_BASE: ${{ secrets.VITE_APP_BASE }}
+      - name: Build Vue .env.production from .env.example
+        run: python3 scripts/render-env-from-example.py vue/.env.example vue/.env.production
+
+      - name: Validate generated env files
         run: |
-          set -e
-          {
-            echo "VITE_API_BASE=${VITE_API_BASE:-}"
-            echo "VITE_APP_BASE=${VITE_APP_BASE:-/}"
-          } > .env.production
+          test -f laravel/.env
+          test -f vue/.env.production
+          grep '^APP_KEY=' laravel/.env
+          grep '^APP_URL=' laravel/.env
+          grep '^VITE_API_BASE=' vue/.env.production
 
-      - name: Composer install (Laravel)
+      - name: Composer install (Laravel, len pre runner)
         working-directory: laravel
         run: composer install --no-dev --optimize-autoloader --no-interaction --no-progress
 
@@ -91,26 +107,26 @@ jobs:
       - name: Deploy Vue (FTP)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ secrets.FTP_PORT || 21 }}
+          server: ${{ env.FTP_SERVER }}
+          username: ${{ env.FTP_USERNAME }}
+          password: ${{ env.FTP_PASSWORD }}
+          port: ${{ env.FTP_PORT }}
           local-dir: ./vue/dist/
-          server-dir: ./htdocs/
+          server-dir: ./public_html/
           state-name: travian-vue-ftp
           exclude: |
             **/.git*
             **/.github/**
 
-      - name: Deploy Laravel (FTP)
+      - name: Deploy Laravel (FTP, bez vendor a .env)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ secrets.FTP_PORT || 21 }}
+          server: ${{ env.FTP_SERVER }}
+          username: ${{ env.FTP_USERNAME }}
+          password: ${{ env.FTP_PASSWORD }}
+          port: ${{ env.FTP_PORT || 21 }}
           local-dir: ./laravel/
-          server-dir: ./htdocs/laravel/
+          server-dir: ./public_html/laravel/
           state-name: travian-laravel-ftp
           exclude: |
             **/.git*
@@ -119,26 +135,24 @@ jobs:
             **/phpunit.xml
             **/phpunit.xml.dist
             **/.phpunit.result.cache
-            **/.env.example
+            **/vendor/**
             **/node_modules/**
             **/storage/logs/*.log
-            **/vendor/**
             **/bootstrap/cache/config.php
             **/bootstrap/cache/routes-*.php
 
-      - name: Deploy Laravel vendor (FTP)
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      - name: Run post-deploy on server via SSH
+        uses: appleboy/ssh-action@v1
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ secrets.FTP_PORT || 21 }}
-          local-dir: ./laravel/vendor/
-          server-dir: ./htdocs/laravel/vendor/
-          state-name: travian-vendor-ftp
-          exclude: |
-            **/.git*
+          host: ${{ env.SSH_HOST }}
+          username: ${{ env.SSH_USERNAME }}
+          key: ${{ env.SSH_PRIVATE_KEY }}
+          port: ${{ env.SSH_PORT }}
+          script: |
+            cd ./public_html/laravel/
+            composer install --no-dev --optimize-autoloader --no-interaction
+            php artisan migrate --force
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
 
-#      - name: Run migrations (Artisan na runneri)
-#        working-directory: laravel
-#        run: php artisan migrate --force

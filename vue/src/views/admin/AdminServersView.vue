@@ -61,6 +61,24 @@ function importWarningLabel(entry: ImportWarningEntry): string {
   return te(k) ? t(k) : entry.key
 }
 
+/** Prehliadač pri prerušení spojenia nepošle telo odpovede — zvyčajne len „Failed to fetch“. */
+function formatBrowserNetworkError(e: unknown): string {
+  if (e instanceof DOMException && e.name === 'AbortError') {
+    return t('adminServers.cancelled')
+  }
+  const msg = e instanceof Error ? e.message : ''
+  const m = msg.toLowerCase()
+  const looksLikeTransportFailure =
+    msg === 'Failed to fetch' ||
+    msg === 'NetworkError when attempting to fetch resource.' ||
+    m.includes('networkerror') ||
+    m.includes('load failed')
+  if (looksLikeTransportFailure) {
+    return t('adminServers.errFetchFailedDetail')
+  }
+  return msg.trim() !== '' ? msg : t('adminServers.networkError')
+}
+
 const servers = ref<AdminServer[]>([])
 const loading = ref(false)
 const loadError = ref<string | null>(null)
@@ -481,7 +499,7 @@ async function startImportUpload(token: string) {
       importError.value = t('adminServers.cancelled')
     } else {
       importPhase.value = 'error'
-      importError.value = e instanceof Error ? e.message : t('adminServers.networkError')
+      importError.value = formatBrowserNetworkError(e)
     }
   } finally {
     importRunning.value = false
@@ -530,7 +548,7 @@ async function startImport() {
       importError.value = t('adminServers.cancelled')
     } else {
       importPhase.value = 'error'
-      importError.value = e instanceof Error ? e.message : t('adminServers.networkError')
+      importError.value = formatBrowserNetworkError(e)
     }
   } finally {
     importRunning.value = false

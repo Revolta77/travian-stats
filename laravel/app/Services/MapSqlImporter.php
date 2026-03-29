@@ -108,9 +108,7 @@ class MapSqlImporter
             }
 
             try {
-                MapSqlUnpreparedBatcher::execute($blob, function (string $chunk): void {
-                    DB::unprepared($chunk);
-                });
+                DB::unprepared($blob);
             } catch (Throwable $e) {
                 throw new RuntimeException(
                     'Chyba pri vykonaní SQL súboru: '.$e->getMessage(),

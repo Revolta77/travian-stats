@@ -221,6 +221,8 @@ export default {
     preparingDownload: 'Pripravujem sťahovanie…',
     cancelled: 'Zrušené.',
     networkError: 'Sieťová chyba.',
+    errFetchFailedDetail:
+      'Spojenie s API sa prerušilo (prehliadač hlási „Failed to fetch“). Laravel často nič nezaloguje, lebo ide o sieťový výpadok alebo zabitie spojenia na úrovni servera. Skús: v DevTools → Network stav požiadavky (červená = timeout alebo reset), na hostingu zvýšiť fastcgi_read_timeout / proxy_read_timeout a max_execution_time pre PHP, overiť správnu URL API a HTTPS. Ak v logu uvidíš riadok „map_sql: import začal“, import na backende začal a spojenie padlo neskôr.',
     missingAuth: 'Chýba prihlásenie.',
     httpError: 'HTTP {status}',
   },

@@ -221,6 +221,8 @@ export default {
     preparingDownload: 'Preparing download…',
     cancelled: 'Cancelled.',
     networkError: 'Network error.',
+    errFetchFailedDetail:
+      'The connection to the API was cut off (the browser reports “Failed to fetch”). Laravel often logs nothing because this is a transport-level failure or the server closed the socket. Try: DevTools → Network for the request status (red = timeout/reset), raise fastcgi_read_timeout / proxy_read_timeout and PHP max_execution_time on the host, verify the API URL and HTTPS. If you see “map_sql: import began” in the log, the backend started and the connection dropped later.',
     missingAuth: 'Not signed in.',
     httpError: 'HTTP {status}',
   },
