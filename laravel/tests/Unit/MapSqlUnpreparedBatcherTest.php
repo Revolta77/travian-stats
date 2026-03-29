@@ -48,4 +48,26 @@ class MapSqlUnpreparedBatcherTest extends TestCase
             $this->assertLessThanOrEqual(16, strlen($chunk), $chunk);
         }
     }
+
+    public function test_execute_in_line_chunks_splits_by_line_count(): void
+    {
+        $lines = [];
+        for ($i = 0; $i < 1001; $i++) {
+            $lines[] = 'SELECT '.$i.';';
+        }
+        $sql = implode("\n", $lines);
+
+        $innerCalls = 0;
+        MapSqlUnpreparedBatcher::executeInLineChunks(
+            $sql,
+            function (string $q) use (&$innerCalls) {
+                $innerCalls++;
+                $this->assertNotSame('', trim($q));
+            },
+            1000,
+            64 * 1024,
+        );
+
+        $this->assertGreaterThanOrEqual(2, $innerCalls);
+    }
 }
