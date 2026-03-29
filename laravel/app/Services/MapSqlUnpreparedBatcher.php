@@ -5,43 +5,14 @@ namespace App\Services;
 use RuntimeException;
 
 /**
- * Vykoná veľký SQL dump po častiach: najprv bloky po N riadkoch, vnútri bloku ešte podľa ; a veľkosti INSERT.
+ * Vykoná veľký SQL dump po častiach pod max. veľkosť paketu (MySQL max_allowed_packet).
  * Delenie na príkazy rešpektuje reťazce ', ", `, komentáre a UTF-8 (hranice sú na bajtoch, ; je ASCII).
- * Veľké INSERT … VALUES (…),(…) rozdelí na viac INSERTov po tuple, tiež s rešpektom k reťazcom.
- *
- * Pozn.: Ak by v reťazci v SQL bol skutočný znak konca riadku, explode po \\n ho rozdelí zle (typický map.sql z Travianu to zvyčajne nemá).
+ * Veľké INSERT … VALUES (…),(…) rozdelí na viac INSERTov po riadkoch (tuple), tiež s rešpektom k reťazcom.
  */
 final class MapSqlUnpreparedBatcher
 {
-    public const DEFAULT_LINES_PER_CHUNK = 1000;
-
-    /** Max. veľkosť jednej dávky odoslanej do DB vnútri jedného riadkového bloku (aj po rozdelení INSERT). */
-    public const DEFAULT_MAX_BYTES = 1024 * 1024;
-
-    /**
-     * Rozdelí súbor po riadkoch a každý blok spracuje cez {@see execute()}.
-     *
-     * @param  callable(string): void  $execute
-     */
-    public static function executeInLineChunks(
-        string $sql,
-        callable $execute,
-        int $linesPerChunk = self::DEFAULT_LINES_PER_CHUNK,
-        ?int $maxBytesInner = null,
-    ): void {
-        $linesPerChunk = max(1, $linesPerChunk);
-        $normalized = str_replace(["\r\n", "\r"], "\n", $sql);
-        $lines = explode("\n", $normalized);
-        $total = count($lines);
-
-        for ($offset = 0; $offset < $total; $offset += $linesPerChunk) {
-            $block = implode("\n", array_slice($lines, $offset, $linesPerChunk));
-            if (trim($block) === '') {
-                continue;
-            }
-            self::execute($block, $execute, $maxBytesInner);
-        }
-    }
+    /** ~1 MiB na dávku (polovica pôvodného stropu) — striktnejší hostingy s nízkym max_allowed_packet. */
+    public const DEFAULT_MAX_BYTES = (1 * 1024 * 1024);
 
     /**
      * @param  callable(string): void  $execute  napr. fn (string $q) => DB::unprepared($q)

@@ -108,7 +108,7 @@ class MapSqlImporter
             }
 
             try {
-                MapSqlUnpreparedBatcher::executeInLineChunks($blob, function (string $chunk): void {
+                MapSqlUnpreparedBatcher::execute($blob, function (string $chunk): void {
                     DB::unprepared($chunk);
                 });
             } catch (Throwable $e) {
