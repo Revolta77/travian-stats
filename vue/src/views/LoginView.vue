@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import Button from 'primevue/button'
 import Card from 'primevue/card'
@@ -8,6 +9,7 @@ import Message from 'primevue/message'
 import Password from 'primevue/password'
 import { useAuthStore } from '../stores/auth'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
@@ -38,7 +40,7 @@ async function submit() {
     } else if (ax.response?.data?.message) {
       errorMsg.value = ax.response.data.message
     } else {
-      errorMsg.value = 'Prihlásenie zlyhalo.'
+      errorMsg.value = t('loginPage.loginFailed')
     }
   } finally {
     loading.value = false
@@ -49,18 +51,18 @@ async function submit() {
 <template>
   <div class="login-page">
     <Card class="login-card">
-      <template #title>Admin prihlásenie</template>
+      <template #title>{{ t('loginPage.title') }}</template>
       <template #content>
         <form class="form" @submit.prevent="submit">
           <Message v-if="errorMsg" severity="error" class="mb-3" :closable="true" @close="errorMsg = null">
             {{ errorMsg }}
           </Message>
           <div class="field">
-            <label for="em">E-mail</label>
+            <label for="em">{{ t('loginPage.email') }}</label>
             <InputText id="em" v-model="email" type="email" autocomplete="username" class="w-full" fluid />
           </div>
           <div class="field">
-            <label for="pw">Heslo</label>
+            <label for="pw">{{ t('loginPage.password') }}</label>
             <Password
               id="pw"
               v-model="password"
@@ -72,7 +74,7 @@ async function submit() {
               autocomplete="current-password"
             />
           </div>
-          <Button type="submit" label="Prihlásiť sa" icon="pi pi-sign-in" :loading="loading" class="mt-2" />
+          <Button type="submit" :label="t('loginPage.submit')" icon="pi pi-sign-in" :loading="loading" class="mt-2" />
         </form>
       </template>
     </Card>

@@ -29,7 +29,7 @@ class AllianceStatsService
      *     },
      * }
      */
-    public function search(int $serverId, int $page = 1, string $tagFilter = ''): array
+    public function search(int $serverId, int $page = 1, string $tagFilter = '', ?int $allianceId = null): array
     {
         $page = max(1, min($page, self::MAX_PAGES));
 
@@ -38,7 +38,7 @@ class AllianceStatsService
             return $this->emptyPayload($page);
         }
 
-        $base = $this->allianceBaseQuery($serverId, $latestDate, $tagFilter);
+        $base = $this->allianceBaseQuery($serverId, $latestDate, $tagFilter, $allianceId);
         $matchCount = (int) (clone $base)->count();
 
         if ($matchCount === 0) {
@@ -82,6 +82,7 @@ class AllianceStatsService
 
             return [
                 'alliance_id' => $aid,
+                'alliance_external_id' => (int) $row->alliance_external_id,
                 'tag' => (string) $row->tag,
                 'member_count' => (int) $row->member_count,
                 'village_count' => (int) $row->village_count,
@@ -102,7 +103,7 @@ class AllianceStatsService
         ];
     }
 
-    private function allianceBaseQuery(int $serverId, string $latestDate, string $tagFilter): Builder
+    private function allianceBaseQuery(int $serverId, string $latestDate, string $tagFilter, ?int $allianceId): Builder
     {
         $q = DB::table('alliances as a')
             ->join('alliance_daily_stats as ads', function ($join) use ($latestDate): void {
@@ -112,16 +113,21 @@ class AllianceStatsService
             ->where('a.server_id', $serverId)
             ->select([
                 'a.id as alliance_id',
+                'a.external_id as alliance_external_id',
                 'a.tag',
                 'ads.member_count',
                 'ads.village_count',
                 'ads.total_population',
             ]);
 
-        $t = trim($tagFilter);
-        if ($t !== '') {
-            $like = '%'.$this->escapeLike(Str::lower($t)).'%';
-            $q->whereRaw('LOWER(a.tag) LIKE ?', [$like]);
+        if ($allianceId !== null) {
+            $q->where('a.id', $allianceId);
+        } else {
+            $t = trim($tagFilter);
+            if ($t !== '') {
+                $like = '%'.$this->escapeLike(Str::lower($t)).'%';
+                $q->whereRaw('LOWER(a.tag) LIKE ?', [$like]);
+            }
         }
 
         return $q;

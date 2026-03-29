@@ -3,7 +3,9 @@
 use App\Http\Controllers\Api\AdminAuthController;
 use App\Http\Controllers\Api\AdminServerController;
 use App\Http\Controllers\Api\AdminServerImportController;
+use App\Http\Controllers\Api\DeployMigrationController;
 use App\Http\Controllers\Api\AllianceStatsController;
+use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\InactiveFinderController;
 use App\Http\Controllers\Api\ServerController;
 use App\Http\Controllers\Api\TribeController;
@@ -16,7 +18,11 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
 
+Route::get('/run_migrate', [DeployMigrationController::class, 'run'])
+    ->middleware('throttle:12,1');
+
 Route::get('/servers', [ServerController::class, 'index']);
+Route::get('/dashboard/servers', [DashboardController::class, 'serverSummaries']);
 Route::get('/tribes', [TribeController::class, 'index']);
 Route::get('/village-stats', [VillageStatsController::class, 'index']);
 Route::get('/user-stats', [UserStatsController::class, 'index']);

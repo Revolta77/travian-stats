@@ -13,10 +13,14 @@ class AllianceStatsController extends Controller
     {
         $v = $request->validated();
 
+        $aid = $v['alliance_id'] ?? null;
+        $allianceId = is_int($aid) ? $aid : null;
+
         $payload = $service->search(
             (int) $v['server_id'],
             (int) ($v['page'] ?? 1),
             trim((string) ($v['tag_filter'] ?? '')),
+            $allianceId,
         );
 
         return response()->json($payload);

@@ -1,0 +1,120 @@
+# Nasadenie na FTP po pushi do main.
+#
+# GitHub → Settings → Secrets and variables → Actions — pridaj:
+#   APP_KEY, APP_URL, ADMIN_EMAIL, ADMIN_PASSWORD
+#   DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD
+#     → musia umožniť pripojenie z GitHub runnera (verejný DB host / remote MySQL).
+#       Ak hosting dáva len localhost, migrácie na runneri neprebehnú — vtedy ostáva /api/run_migrate na serveri.
+#   TOKEN_MIGRATION, TOKEN_CRON (voliteľné; do .env na server; TOKEN_MIGRATION pre ručný / externý HTTP migrate)
+#   VITE_API_BASE, VITE_APP_BASE (voliteľné, default /)
+#   FTP_SERVER, FTP_USERNAME, FTP_PASSWORD, FTP_PORT (alebo 21)
+#   FTP_DOMAIN — názov priečinka na FTP (napr. example.com), výsledná cesta: {FTP_DOMAIN}/htdocs/vue|laravel
+#
+name: Deploy main
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      APP_KEY: ${{ secrets.APP_KEY }}
+      APP_URL: ${{ secrets.APP_URL }}
+      APP_ENV: production
+      APP_DEBUG: "false"
+      ADMIN_EMAIL: ${{ secrets.ADMIN_EMAIL }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      DB_HOST: ${{ secrets.DB_HOST }}
+      DB_PORT: ${{ secrets.DB_PORT }}
+      DB_DATABASE: ${{ secrets.DB_DATABASE }}
+      DB_USERNAME: ${{ secrets.DB_USERNAME }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      TOKEN_MIGRATION: ${{ secrets.TOKEN_MIGRATION }}
+      TOKEN_CRON: ${{ secrets.TOKEN_CRON }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: mbstring, xml, ctype, fileinfo, pdo, pdo_mysql
+          coverage: none
+          tools: composer
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: yarn
+          cache-dependency-path: vue/yarn.lock
+
+      - name: Write Laravel .env
+        run: python3 scripts/write-deploy-laravel-env.py
+
+      - name: Write Vue .env.production
+        working-directory: vue
+        env:
+          VITE_API_BASE: ${{ secrets.VITE_API_BASE }}
+          VITE_APP_BASE: ${{ secrets.VITE_APP_BASE }}
+        run: |
+          set -e
+          {
+            echo "VITE_API_BASE=${VITE_API_BASE:-}"
+            echo "VITE_APP_BASE=${VITE_APP_BASE:-/}"
+          } > .env.production
+
+      - name: Composer install (Laravel)
+        working-directory: laravel
+        run: composer install --no-dev --optimize-autoloader --no-interaction --no-progress
+
+      - name: Yarn install & build (Vue)
+        working-directory: vue
+        run: yarn install --frozen-lockfile && yarn build
+
+      - name: Deploy Vue (FTP)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ secrets.FTP_PORT || 21 }}
+          local-dir: ./vue/dist/
+          server-dir: ./${{ secrets.FTP_DOMAIN }}/htdocs/vue/
+          state-name: travian-vue-ftp
+          exclude: |
+            **/.git*
+            **/.github/**
+
+      - name: Deploy Laravel (FTP)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ secrets.FTP_PORT || 21 }}
+          local-dir: ./laravel/
+          server-dir: ./${{ secrets.FTP_DOMAIN }}/htdocs/laravel/
+          state-name: travian-laravel-ftp
+          exclude: |
+            **/.git*
+            **/.github/**
+            **/tests/**
+            **/phpunit.xml
+            **/phpunit.xml.dist
+            **/.phpunit.result.cache
+            **/.env.example
+            **/node_modules/**
+            **/storage/logs/*.log
+
+      - name: Run migrations (Artisan na runneri)
+        working-directory: laravel
+        run: php artisan migrate --force

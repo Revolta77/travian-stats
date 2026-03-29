@@ -39,6 +39,8 @@ class UserStatsService
         string $allianceFilter = '',
         string $sortBy = 'population',
         string $sortDir = 'desc',
+        ?int $playerId = null,
+        ?int $allianceId = null,
     ): array {
         $page = max(1, min($page, self::MAX_PAGES));
         $hasCoords = $x !== null && $y !== null;
@@ -57,7 +59,7 @@ class UserStatsService
             return $this->emptyPayload($page, $hasCoords);
         }
 
-        $filtered = $this->filteredPlayersQuery($serverId, $accountFilter, $allianceFilter);
+        $filtered = $this->filteredPlayersQuery($serverId, $accountFilter, $allianceFilter, $playerId, $allianceId);
         $matchCount = (int) (clone $filtered)->count();
 
         if ($matchCount === 0) {
@@ -84,6 +86,7 @@ class UserStatsService
             ->select([
                 'p.id',
                 'p.name',
+                'p.external_id as player_external_id',
                 DB::raw('COALESCE(pop.total_population, 0) as total_population'),
                 DB::raw('COALESCE(vc.village_count, 0) as village_count'),
             ]);
@@ -114,9 +117,9 @@ class UserStatsService
         $playerIds = $rows->pluck('id')->all();
         $dateColumns = $this->dateColumns();
         $changes = $this->populationChangesForPlayers($playerIds, $dateColumns);
-        $allianceTags = $this->allianceTagByPlayer($serverId, $playerIds);
+        $allianceInfo = $this->allianceInfoByPlayer($serverId, $playerIds);
 
-        $mapped = $rows->map(function ($row) use ($changes, $dateColumns, $allianceTags, $hasCoords) {
+        $mapped = $rows->map(function ($row) use ($changes, $dateColumns, $allianceInfo, $hasCoords) {
             $pid = (int) $row->id;
             $daily = [];
             foreach ($dateColumns as $d) {
@@ -124,9 +127,11 @@ class UserStatsService
             }
 
             $dist = $row->distance !== null ? round((float) $row->distance, 2) : null;
+            $aInfo = $allianceInfo->get($pid);
 
             return [
                 'player_id' => $pid,
+                'player_external_id' => (int) $row->player_external_id,
                 'distance' => $hasCoords ? $dist : null,
                 'village_count' => (int) $row->village_count,
                 'account' => [
@@ -134,7 +139,8 @@ class UserStatsService
                     'total_population' => (int) $row->total_population,
                 ],
                 'alliance' => [
-                    'tag' => $allianceTags->get($pid),
+                    'tag' => $aInfo !== null ? ($aInfo['tag'] ?? null) : null,
+                    'alliance_id' => $aInfo !== null ? ($aInfo['alliance_id'] ?? null) : null,
                 ],
                 'daily_changes' => $daily,
             ];
@@ -157,13 +163,29 @@ class UserStatsService
         int $serverId,
         string $accountFilter,
         string $allianceFilter,
+        ?int $playerId,
+        ?int $allianceId,
     ): Builder {
         $q = DB::table('players as p')
+            ->where('p.server_id', $serverId)
             ->whereExists(function ($sub) use ($serverId): void {
                 $sub->from('villages as vx')
                     ->whereColumn('vx.player_id', 'p.id')
                     ->where('vx.server_id', $serverId);
             });
+
+        if ($playerId !== null) {
+            $q->where('p.id', $playerId);
+        }
+
+        if ($allianceId !== null) {
+            $q->whereExists(function ($sub) use ($serverId, $allianceId): void {
+                $sub->from('villages as v')
+                    ->whereColumn('v.player_id', 'p.id')
+                    ->where('v.server_id', $serverId)
+                    ->where('v.alliance_id', $allianceId);
+            });
+        }
 
         $this->applyAccountNameFilter($q, $accountFilter);
         $this->applyAllianceTagFilter($q, $serverId, $allianceFilter);
@@ -273,12 +295,12 @@ class UserStatsService
     }
 
     /**
-     * Tag aliancie z dediny s najvyššou populáciou (podľa posledného snapshotu dediny).
+     * Tag a id aliancie z dediny s najvyššou populáciou (podľa posledného snapshotu dediny).
      *
      * @param  list<int>  $playerIds
-     * @return Collection<int, string|null>
+     * @return Collection<int, array{tag: string|null, alliance_id: int|null}>
      */
-    private function allianceTagByPlayer(int $serverId, array $playerIds): Collection
+    private function allianceInfoByPlayer(int $serverId, array $playerIds): Collection
     {
         if ($playerIds === []) {
             return collect();
@@ -299,14 +321,19 @@ class UserStatsService
             ->where('v.server_id', $serverId)
             ->whereIn('v.player_id', $playerIds)
             ->orderByDesc('vds.population')
-            ->get(['v.player_id', 'a.tag']);
+            ->get(['v.player_id', 'a.tag', 'v.alliance_id']);
 
         $out = collect();
         foreach ($rows as $row) {
             $pid = (int) $row->player_id;
             if (! $out->has($pid)) {
                 $tag = $row->tag;
-                $out->put($pid, $tag !== null && trim((string) $tag) !== '' ? (string) $tag : null);
+                $tagStr = $tag !== null && trim((string) $tag) !== '' ? (string) $tag : null;
+                $aid = $row->alliance_id !== null ? (int) $row->alliance_id : null;
+                $out->put($pid, [
+                    'tag' => $tagStr,
+                    'alliance_id' => $aid,
+                ]);
             }
         }
 

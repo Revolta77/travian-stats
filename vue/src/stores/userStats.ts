@@ -10,6 +10,8 @@ export type UserStatsSortDir = 'asc' | 'desc'
 export const useUserStatsStore = defineStore('userStats', {
   state: () => ({
     serverId: null as number | null,
+    contextPlayerId: null as number | null,
+    contextAllianceId: null as number | null,
     coordX: null as number | null,
     coordY: null as number | null,
     page: 1,

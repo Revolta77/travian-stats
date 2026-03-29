@@ -17,6 +17,7 @@ class UserStatsSearchRequest extends FormRequest
     {
         $min = (int) config('travian.map.coordinate_min', -400);
         $max = (int) config('travian.map.coordinate_max', 400);
+
         return [
             'server_id' => [
                 'required',
@@ -28,6 +29,30 @@ class UserStatsSearchRequest extends FormRequest
             'page' => ['sometimes', 'integer', 'min:1', 'max:5'],
             'account_filter' => ['sometimes', 'nullable', 'string', 'max:120'],
             'alliance_filter' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'player_id' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                'min:1',
+                Rule::exists('players', 'id')->where(function ($q): void {
+                    $sid = $this->input('server_id');
+                    if ($sid !== null && $sid !== '') {
+                        $q->where('server_id', (int) $sid);
+                    }
+                }),
+            ],
+            'alliance_id' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                'min:1',
+                Rule::exists('alliances', 'id')->where(function ($q): void {
+                    $sid = $this->input('server_id');
+                    if ($sid !== null && $sid !== '') {
+                        $q->where('server_id', (int) $sid);
+                    }
+                }),
+            ],
             'sort_by' => ['sometimes', 'string', Rule::in(['distance', 'account', 'population', 'villages'])],
             'sort_dir' => ['sometimes', 'string', Rule::in(['asc', 'desc'])],
         ];
@@ -67,6 +92,12 @@ class UserStatsSearchRequest extends FormRequest
         }
         if ($this->has('y') && $this->input('y') !== null && $this->input('y') !== '') {
             $this->merge(['y' => (int) $this->input('y')]);
+        }
+        if ($this->has('player_id') && $this->input('player_id') !== null && $this->input('player_id') !== '') {
+            $this->merge(['player_id' => (int) $this->input('player_id')]);
+        }
+        if ($this->has('alliance_id') && $this->input('alliance_id') !== null && $this->input('alliance_id') !== '') {
+            $this->merge(['alliance_id' => (int) $this->input('alliance_id')]);
         }
     }
 }

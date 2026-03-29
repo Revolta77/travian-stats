@@ -56,6 +56,18 @@ export type ServerOption = {
   id: number
   name: string
   slug: string
+  base_url: string | null
+}
+
+export type DashboardServerSummary = {
+  server_id: number
+  name: string
+  slug: string
+  accounts_count: number
+  alliances_count: number
+  villages_count: number
+  active_players_count: number
+  activity_window_end: string | null
 }
 
 export type AdminServer = {
@@ -79,11 +91,14 @@ export type VillageStatsMeta = {
   per_page: number
   total: number
   last_page: number
+  has_coordinates: boolean
 }
 
 export type VillageStatsRow = {
   village_id: number
-  distance: number
+  player_id: number
+  alliance_id: number | null
+  distance: number | null
   account: {
     name: string
     total_population: number
@@ -114,12 +129,11 @@ export type VillageStatsResponse = {
 /** Rovnaký tvar ako village stats; odpoveď z `/inactive-finder`. */
 export type InactiveFinderResponse = VillageStatsResponse
 
-export type UserStatsMeta = VillageStatsMeta & {
-  has_coordinates: boolean
-}
+export type UserStatsMeta = VillageStatsMeta
 
 export type UserStatsRow = {
   player_id: number
+  player_external_id: number
   distance: number | null
   village_count: number
   account: {
@@ -128,6 +142,7 @@ export type UserStatsRow = {
   }
   alliance: {
     tag: string | null
+    alliance_id: number | null
   }
   daily_changes: Record<string, number | null | undefined>
 }
@@ -140,6 +155,7 @@ export type UserStatsResponse = {
 
 export type AllianceStatsRow = {
   alliance_id: number
+  alliance_external_id: number
   tag: string
   member_count: number
   village_count: number

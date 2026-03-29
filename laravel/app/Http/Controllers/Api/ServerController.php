@@ -13,7 +13,7 @@ class ServerController extends Controller
         $servers = Server::query()
             ->where('is_active', true)
             ->orderBy('name')
-            ->get(['id', 'name', 'slug']);
+            ->get(['id', 'name', 'slug', 'base_url']);
 
         return response()->json(['data' => $servers]);
     }

@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import { applyStoredDarkModeClass } from './lib/uiStorage'
+import { i18n } from './i18n'
 import { piniaPersistLocalStorage } from './plugins/piniaPersistLocalStorage'
 import PrimeVue from 'primevue/config'
 import Aura from '@primevue/themes/aura'
@@ -18,6 +19,7 @@ const app = createApp(App)
 const pinia = createPinia()
 pinia.use(piniaPersistLocalStorage)
 app.use(pinia)
+app.use(i18n)
 app.use(router)
 app.use(PrimeVue, {
   theme: {

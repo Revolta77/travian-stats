@@ -18,12 +18,12 @@ class VillageStatsService
     private const MAX_PAGES = 5;
 
     /**
-     * Najbližších MAX_RESULTS dedín servera k bodu (x, y), s voliteľnými filtrami.
+     * Najbližších MAX_RESULTS dedín k bodu (x, y), alebo zoznam bez súradníc zoradený podľa sort_by (predvolene populácia dediny).
      */
     public function search(
         int $serverId,
-        int $x,
-        int $y,
+        ?int $x,
+        ?int $y,
         int $page = 1,
         string $accountFilter = '',
         string $villageFilter = '',
@@ -31,8 +31,24 @@ class VillageStatsService
         string $myAccountName = '',
         string $allianceFilter = '',
         ?int $tribeId = null,
+        ?int $playerId = null,
+        ?int $allianceId = null,
+        string $sortBy = 'population',
+        string $sortDir = 'desc',
     ): array {
         $page = max(1, min($page, self::MAX_PAGES));
+        $hasCoords = $x !== null && $y !== null;
+
+        $sortBy = strtolower($sortBy);
+        $sortDir = strtolower($sortDir) === 'asc' ? 'asc' : 'desc';
+        $allowedSort = ['distance', 'population', 'account', 'village', 'alliance'];
+        if (! in_array($sortBy, $allowedSort, true)) {
+            $sortBy = $hasCoords ? 'distance' : 'population';
+        }
+        if (! $hasCoords && $sortBy === 'distance') {
+            $sortBy = 'population';
+            $sortDir = 'desc';
+        }
 
         $base = $this->filteredVillageQuery(
             $serverId,
@@ -42,6 +58,8 @@ class VillageStatsService
             $myAccountName,
             $allianceFilter,
             $tribeId,
+            $playerId,
+            $allianceId,
         );
 
         $matchCount = (int) (clone $base)->count();
@@ -64,12 +82,36 @@ class VillageStatsService
                 'v.tribe',
                 'v.days_without_change',
                 'v.player_id',
+                'v.alliance_id',
                 'p.name as player_name',
                 'a.tag as alliance_tag',
-            ])
-            ->selectRaw('SQRT(POW(v.x - ?, 2) + POW(v.y - ?, 2)) as distance', [$x, $y])
-            ->orderBy('distance')
-            ->limit(self::MAX_RESULTS);
+            ]);
+
+        $needsLatestPopJoin = ! $hasCoords || $sortBy === 'population';
+
+        if ($hasCoords) {
+            $ranked->selectRaw('SQRT(POW(v.x - ?, 2) + POW(v.y - ?, 2)) as distance', [$x, $y]);
+        } else {
+            $ranked->selectRaw('NULL as distance');
+        }
+
+        if ($needsLatestPopJoin) {
+            $latestDates = DB::table('village_daily_stats')
+                ->select('village_id', DB::raw('MAX(snapshot_date) as max_date'))
+                ->groupBy('village_id');
+
+            $ranked->leftJoinSub($latestDates, 'vds_mx', function ($join): void {
+                $join->on('vds_mx.village_id', '=', 'v.id');
+            })
+                ->leftJoin('village_daily_stats as vds_l', function ($join): void {
+                    $join->on('vds_l.village_id', '=', 'v.id')
+                        ->on('vds_l.snapshot_date', '=', 'vds_mx.max_date');
+                });
+        }
+
+        $this->applyVillageSortOrder($ranked, $sortBy, $sortDir, $hasCoords);
+
+        $ranked->limit(self::MAX_RESULTS);
 
         $rows = DB::query()
             ->fromSub($ranked, 't')
@@ -78,7 +120,7 @@ class VillageStatsService
             ->get();
 
         if ($rows->isEmpty()) {
-            return $this->emptyPayload($page, $effectiveTotal, $lastPage);
+            return $this->emptyPayload($page, $effectiveTotal, $lastPage, $hasCoords);
         }
 
         $villageIds = $rows->pluck('id')->all();
@@ -92,7 +134,7 @@ class VillageStatsService
 
         $tribes = config('travian.tribes', []);
 
-        $mapped = $rows->map(function ($row) use ($latestPops, $playerAgg, $changes, $dateColumns, $tribes) {
+        $mapped = $rows->map(function ($row) use ($latestPops, $playerAgg, $changes, $dateColumns, $tribes, $hasCoords) {
             $vid = (int) $row->id;
             $pid = (int) $row->player_id;
             $pop = $latestPops->get($vid);
@@ -105,9 +147,13 @@ class VillageStatsService
                 $daily[$d] = $changes->get($vid)?->get($d)?->population_change;
             }
 
+            $aid = $row->alliance_id !== null ? (int) $row->alliance_id : null;
+
             return [
                 'village_id' => $vid,
-                'distance' => round((float) $row->distance, 2),
+                'player_id' => $pid,
+                'alliance_id' => $aid,
+                'distance' => $hasCoords ? round((float) $row->distance, 2) : null,
                 'account' => [
                     'name' => $row->player_name,
                     'total_population' => $agg->total_population ?? 0,
@@ -138,8 +184,48 @@ class VillageStatsService
                 'per_page' => self::PER_PAGE,
                 'total' => $effectiveTotal,
                 'last_page' => $lastPage,
+                'has_coordinates' => $hasCoords,
             ],
         ];
+    }
+
+    private function applyVillageSortOrder(Builder $ranked, string $sortBy, string $sortDir, bool $hasCoords): void
+    {
+        if ($sortBy === 'distance' && $hasCoords) {
+            $ranked->orderBy('distance', $sortDir)->orderBy('v.id');
+
+            return;
+        }
+
+        if ($sortBy === 'population') {
+            $ranked->orderByRaw('COALESCE(vds_l.population, 0) '.$sortDir)->orderBy('v.id');
+
+            return;
+        }
+
+        if ($sortBy === 'account') {
+            $ranked->orderBy('p.name', $sortDir)->orderBy('v.id');
+
+            return;
+        }
+
+        if ($sortBy === 'village') {
+            $ranked->orderBy('v.name', $sortDir)->orderBy('v.id');
+
+            return;
+        }
+
+        if ($sortBy === 'alliance') {
+            $ranked->orderByRaw('LOWER(COALESCE(a.tag, \'\')) '.$sortDir)->orderBy('v.id');
+
+            return;
+        }
+
+        if ($hasCoords) {
+            $ranked->orderBy('distance', 'asc')->orderBy('v.id');
+        } else {
+            $ranked->orderByRaw('COALESCE(vds_l.population, 0) DESC')->orderBy('v.id');
+        }
     }
 
     private function filteredVillageQuery(
@@ -150,11 +236,21 @@ class VillageStatsService
         string $myAccountName,
         string $allianceFilter = '',
         ?int $tribeId = null,
+        ?int $playerId = null,
+        ?int $allianceId = null,
     ): Builder {
         $q = DB::table('villages as v')
             ->join('players as p', 'p.id', '=', 'v.player_id')
             ->leftJoin('alliances as a', 'a.id', '=', 'v.alliance_id')
             ->where('v.server_id', $serverId);
+
+        if ($playerId !== null) {
+            $q->where('v.player_id', $playerId);
+        }
+
+        if ($allianceId !== null) {
+            $q->where('v.alliance_id', $allianceId);
+        }
 
         $this->applyAccountNameFilter($q, $accountFilter);
         $this->applyVillageFilter($q, $villageFilter);
@@ -352,7 +448,7 @@ class VillageStatsService
         });
     }
 
-    private function emptyPayload(int $page, int $effectiveTotal, int $lastPage): array
+    private function emptyPayload(int $page, int $effectiveTotal, int $lastPage, bool $hasCoordinates = false): array
     {
         return [
             'date_columns' => $this->dateColumns(),
@@ -362,6 +458,7 @@ class VillageStatsService
                 'per_page' => self::PER_PAGE,
                 'total' => $effectiveTotal,
                 'last_page' => max(1, $lastPage),
+                'has_coordinates' => $hasCoordinates,
             ],
         ];
     }

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import Button from 'primevue/button'
 import { useAuthStore } from '../../stores/auth'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const router = useRouter()
 
@@ -15,11 +17,20 @@ async function logout() {
 <template>
   <div class="admin-layout">
     <aside class="aside">
-      <div class="aside-title">Admin</div>
+      <div class="aside-title">{{ t('adminLayout.panelTitle') }}</div>
       <nav class="aside-nav">
-        <RouterLink to="/admin/servers" class="aside-link" active-class="aside-link--active">Servery</RouterLink>
+        <RouterLink to="/admin/servers" class="aside-link" active-class="aside-link--active">{{
+          t('adminLayout.navServers')
+        }}</RouterLink>
       </nav>
-      <Button label="Odhlásiť" icon="pi pi-sign-out" severity="secondary" text class="logout" @click="logout" />
+      <Button
+        :label="t('adminLayout.logout')"
+        icon="pi pi-sign-out"
+        severity="secondary"
+        text
+        class="logout"
+        @click="logout"
+      />
     </aside>
     <div class="admin-body">
       <RouterView />

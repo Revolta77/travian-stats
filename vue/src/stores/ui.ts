@@ -1,9 +1,11 @@
 import { defineStore } from 'pinia'
-import { readSavedDarkMode, syncDarkClassOnHtml } from '../lib/uiStorage'
+import type { AppLocale } from '../lib/uiStorage'
+import { readSavedDarkMode, readSavedLocale, syncDarkClassOnHtml } from '../lib/uiStorage'
 
 export const useUiStore = defineStore('ui', {
   state: () => ({
     darkMode: readSavedDarkMode(),
+    locale: readSavedLocale(),
   }),
   actions: {
     setDarkMode(value: boolean) {
@@ -15,6 +17,12 @@ export const useUiStore = defineStore('ui', {
     },
     toggleDarkMode() {
       this.setDarkMode(!this.darkMode)
+    },
+    setLocale(value: AppLocale) {
+      if (this.locale === value) {
+        return
+      }
+      this.locale = value
     },
   },
 })

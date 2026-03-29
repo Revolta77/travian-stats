@@ -25,6 +25,11 @@ class UserStatsController extends Controller
             $sortDir = 'desc';
         }
 
+        $pid = $v['player_id'] ?? null;
+        $playerId = is_int($pid) ? $pid : null;
+        $aid = $v['alliance_id'] ?? null;
+        $allianceId = is_int($aid) ? $aid : null;
+
         $payload = $service->search(
             (int) $v['server_id'],
             $x,
@@ -34,6 +39,8 @@ class UserStatsController extends Controller
             trim((string) ($v['alliance_filter'] ?? '')),
             $sortBy,
             $sortDir,
+            $playerId,
+            $allianceId,
         );
 
         return response()->json($payload);

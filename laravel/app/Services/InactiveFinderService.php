@@ -44,6 +44,7 @@ class InactiveFinderService
                 'v.tribe',
                 'v.days_without_change',
                 'v.player_id',
+                'v.alliance_id',
                 'p.name as player_name',
                 'a.tag as alliance_tag',
             ])
@@ -87,8 +88,12 @@ class InactiveFinderService
                 $daily[$d] = $changes->get($vid)?->get($d)?->population_change;
             }
 
+            $allianceId = $row->alliance_id !== null ? (int) $row->alliance_id : null;
+
             return [
                 'village_id' => $vid,
+                'player_id' => $pid,
+                'alliance_id' => $allianceId,
                 'distance' => round((float) $row->distance, 2),
                 'account' => [
                     'name' => $row->player_name,
@@ -120,6 +125,7 @@ class InactiveFinderService
                 'per_page' => self::PER_PAGE,
                 'total' => $effectiveTotal,
                 'last_page' => $lastPage,
+                'has_coordinates' => true,
             ],
         ];
     }
@@ -244,6 +250,7 @@ class InactiveFinderService
                 'per_page' => self::PER_PAGE,
                 'total' => $effectiveTotal,
                 'last_page' => max(1, $lastPage),
+                'has_coordinates' => true,
             ],
         ];
     }

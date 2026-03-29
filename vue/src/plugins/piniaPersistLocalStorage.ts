@@ -93,6 +93,20 @@ function reviveVillageStats(raw: unknown): Record<string, unknown> | null {
     }
   }
 
+  if (
+    'sortBy' in o &&
+    (o.sortBy === 'distance' ||
+      o.sortBy === 'population' ||
+      o.sortBy === 'account' ||
+      o.sortBy === 'village' ||
+      o.sortBy === 'alliance')
+  ) {
+    patch.sortBy = o.sortBy
+  }
+  if ('sortDir' in o && (o.sortDir === 'asc' || o.sortDir === 'desc')) {
+    patch.sortDir = o.sortDir
+  }
+
   return Object.keys(patch).length ? patch : null
 }
 
@@ -268,6 +282,8 @@ export function piniaPersistLocalStorage(ctx: PiniaPluginContext): void {
             tableVillageFilter: state.tableVillageFilter,
             tableAllianceFilter: state.tableAllianceFilter,
             tableTribeId: state.tableTribeId,
+            sortBy: state.sortBy,
+            sortDir: state.sortDir,
           }),
         )
       },
@@ -346,9 +362,15 @@ export function piniaPersistLocalStorage(ctx: PiniaPluginContext): void {
   }
 
   if (store.$id === 'ui') {
+    const persistUi = (state: Record<string, unknown>) => {
+      const darkMode = state.darkMode === true
+      const locale = typeof state.locale === 'string' ? state.locale : 'en'
+      localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({ darkMode, locale }))
+    }
+    persistUi(store.$state as Record<string, unknown>)
     store.$subscribe(
       (_mutation, state) => {
-        localStorage.setItem(UI_STORAGE_KEY, JSON.stringify({ darkMode: state.darkMode }))
+        persistUi(state as Record<string, unknown>)
       },
       { detached: true },
     )

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import axios from 'axios'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
@@ -9,10 +10,13 @@ import Message from 'primevue/message'
 import Paginator from 'primevue/paginator'
 import ProgressSpinner from 'primevue/progressspinner'
 import Select from 'primevue/select'
+import { useTribeLabel } from '../composables/useTribeLabel'
 import { api, type InactiveFinderResponse, type ServerOption } from '../lib/api'
 import { useInactiveFinderStore } from '../stores/inactiveFinder'
 
 const store = useInactiveFinderStore()
+const { locale } = useI18n()
+const { tribeLabel } = useTribeLabel()
 
 const servers = ref<ServerOption[]>([])
 const serversLoading = ref(false)
@@ -219,6 +223,7 @@ onMounted(() => {
 
     <template v-else-if="result">
       <DataTable
+        :key="locale"
         :value="result.rows"
         data-key="village_id"
         striped-rows
@@ -244,7 +249,8 @@ onMounted(() => {
               <strong>{{ data.village.name }}</strong>
               <span class="sub">
                 ({{ data.village.x }}|{{ data.village.y }}) · pop: {{ data.village.population ?? '—' }} ·
-                {{ data.village.tribe_label }} · neaktívne dni: {{ data.village.days_without_change }}
+                {{ tribeLabel(data.village.tribe, data.village.tribe_label) }} · neaktívne dni:
+                {{ data.village.days_without_change }}
               </span>
             </div>
           </template>

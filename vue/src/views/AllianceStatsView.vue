@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
@@ -10,10 +12,17 @@ import Tag from 'primevue/tag'
 import Paginator from 'primevue/paginator'
 import ProgressSpinner from 'primevue/progressspinner'
 import Select from 'primevue/select'
+import GameExternalEyeLink from '../components/GameExternalEyeLink.vue'
 import { api, type AllianceStatsResponse, type ServerOption } from '../lib/api'
+import { gameAllianceUrl, trimGameBaseUrl } from '../lib/gameLinks'
 import { useAllianceStatsStore } from '../stores/allianceStats'
 
+const { t } = useI18n()
 const store = useAllianceStatsStore()
+const route = useRoute()
+const router = useRouter()
+
+const pendingAllianceIdFromRoute = ref<number | null>(null)
 
 const servers = ref<ServerOption[]>([])
 const serversLoading = ref(false)
@@ -25,6 +34,30 @@ const clientError = ref<string | null>(null)
 const validationErrors = ref<Record<string, string[]> | null>(null)
 
 const serverOptions = computed(() => servers.value.map((s) => ({ label: s.name, value: s.id })))
+
+const serverGameBase = computed(() => {
+  if (store.serverId === null) {
+    return null
+  }
+  const s = servers.value.find((x) => x.id === store.serverId)
+  return trimGameBaseUrl(s?.base_url)
+})
+
+function parseQueryPositiveInt(v: unknown): number | null {
+  const raw = Array.isArray(v) ? v[0] : v
+  if (raw === undefined || raw === null || raw === '') {
+    return null
+  }
+  const n = Number.parseInt(String(raw), 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function routeHasAllianceDeepLinkQuery(): boolean {
+  return (
+    parseQueryPositiveInt(route.query.server_id) !== null &&
+    parseQueryPositiveInt(route.query.alliance_id) !== null
+  )
+}
 
 const errorText = computed(() => {
   if (clientError.value) {
@@ -46,7 +79,7 @@ function formatDateHeader(iso: string): string {
 
 function formatChange(v: number | null | undefined): string {
   if (v === null || v === undefined) {
-    return '—'
+    return t('common.emDash')
   }
   if (v > 0) {
     return `+${v}`
@@ -74,9 +107,13 @@ function allianceStatsQueryParams(): Record<string, string | number> {
     server_id: store.serverId!,
     page: store.page,
   }
-  const tf = store.tagFilter.trim()
-  if (tf) {
-    p.tag_filter = tf
+  if (pendingAllianceIdFromRoute.value !== null) {
+    p.alliance_id = pendingAllianceIdFromRoute.value
+  } else {
+    const tf = store.tagFilter.trim()
+    if (tf) {
+      p.tag_filter = tf
+    }
   }
   return p
 }
@@ -88,7 +125,7 @@ async function loadServers() {
     const { data } = await api.get<{ data: ServerOption[] }>('/servers')
     servers.value = data.data ?? []
   } catch {
-    serversError.value = 'Nepodarilo sa načítať zoznam serverov.'
+    serversError.value = t('allianceStats.serversLoadError')
   } finally {
     serversLoading.value = false
   }
@@ -99,7 +136,7 @@ function validateBeforeSearch(): boolean {
   validationErrors.value = null
 
   if (store.serverId === null) {
-    clientError.value = 'Vyberte server.'
+    clientError.value = t('allianceStats.selectServer')
     return false
   }
 
@@ -121,13 +158,15 @@ async function runSearch() {
     })
     result.value = data
     store.setPage(data.meta.current_page)
+    pendingAllianceIdFromRoute.value = null
   } catch (e) {
     result.value = null
+    pendingAllianceIdFromRoute.value = null
     if (axios.isAxiosError(e) && e.response?.status === 422) {
       const body = e.response.data as { errors?: Record<string, string[]> }
       validationErrors.value = body.errors ?? null
     } else {
-      clientError.value = 'Požiadavka zlyhala. Skúste znova.'
+      clientError.value = t('allianceStats.requestFailed')
     }
   } finally {
     loading.value = false
@@ -154,9 +193,30 @@ const paginatorFirst = computed(() => {
 watch(
   servers,
   (list) => {
-    if (list.length > 0 && store.serverId === null) {
+    if (list.length > 0 && store.serverId === null && !routeHasAllianceDeepLinkQuery()) {
       store.serverId = list[0].id
     }
+  },
+  { immediate: true },
+)
+
+async function applyDeepLinkFromRoute(): Promise<void> {
+  const sid = parseQueryPositiveInt(route.query.server_id)
+  const aid = parseQueryPositiveInt(route.query.alliance_id)
+  if (sid === null || aid === null) {
+    return
+  }
+  store.serverId = sid
+  pendingAllianceIdFromRoute.value = aid
+  store.resetPage()
+  await router.replace({ name: 'alliance-stats', query: {} })
+  await runSearch()
+}
+
+watch(
+  () => [route.query.server_id, route.query.alliance_id],
+  () => {
+    void applyDeepLinkFromRoute()
   },
   { immediate: true },
 )
@@ -168,10 +228,9 @@ onMounted(() => {
 
 <template>
   <div class="page">
-    <h1>Alliance stats</h1>
+    <h1>{{ t('meta.alliances') }}</h1>
     <p class="lead">
-      Prehľad aliancií na serveri podľa posledného denného agregátu (členovia, dediny, populácia). Filter tagu je čiastočná zhoda
-      (bez rozlišovania veľkých písmen). Zmeny v stĺpcoch dátumov sú denný rozdiel celkovej populácie aliancie z importu.
+      {{ t('allianceStats.lead') }}
     </p>
 
     <Message v-if="serversError" severity="warn" class="mb-3" :closable="true">
@@ -181,33 +240,33 @@ onMounted(() => {
     <div class="toolbar">
       <div class="toolbar-fields">
         <div class="field">
-          <label for="als-srv">Server</label>
+          <label for="als-srv">{{ t('allianceStats.labelServer') }}</label>
           <Select
             id="als-srv"
             v-model="store.serverId"
             :options="serverOptions"
             option-label="label"
             option-value="value"
-            placeholder="Vyberte server"
+            :placeholder="t('allianceStats.serverPlaceholder')"
             :loading="serversLoading"
             class="server-select"
             show-clear
           />
         </div>
         <div class="field field-tag">
-          <label for="als-tag">Filter tagu aliancie</label>
+          <label for="als-tag">{{ t('allianceStats.labelTagFilter') }}</label>
           <InputText
             id="als-tag"
             v-model="store.tagFilter"
-            placeholder="Časť tagu (voliteľné)"
+            :placeholder="t('allianceStats.placeholderTag')"
             class="tag-input"
             @keydown.enter.prevent="onSearchClick"
           />
         </div>
       </div>
       <div class="field field-action">
-        <label class="invisible">Akcia</label>
-        <Button label="Zobraziť aliancie" icon="pi pi-users" @click="onSearchClick" />
+        <label class="invisible">{{ t('allianceStats.actionAria') }}</label>
+        <Button :label="t('allianceStats.showAlliances')" icon="pi pi-users" @click="onSearchClick" />
       </div>
     </div>
 
@@ -228,38 +287,64 @@ onMounted(() => {
         class="mt-3 alliance-stats-table"
         responsive-layout="scroll"
       >
-        <Column field="tag" header="Aliancia" sortable header-class="col-head-mid" body-class="col-mid">
+        <Column field="tag" :header="t('allianceStats.colAlliance')" sortable header-class="col-head-mid" body-class="col-mid">
           <template #body="{ data }">
             <span class="alliance-tag">{{ data.tag }}</span>
           </template>
         </Column>
         <Column
           field="member_count"
-          header="Účty"
+          :header="t('allianceStats.colAccounts')"
           sortable
           header-class="col-head-mid"
           body-class="col-mid"
           style="width: 6rem"
         >
           <template #body="{ data }">
-            <span class="num-val">{{ data.member_count }}</span>
+            <RouterLink
+              v-if="store.serverId !== null"
+              class="stat-link num-val"
+              :to="{
+                name: 'user-stats',
+                query: {
+                  server_id: String(store.serverId),
+                  alliance_id: String(data.alliance_id),
+                },
+              }"
+            >
+              {{ data.member_count }}
+            </RouterLink>
+            <span v-else class="num-val">{{ data.member_count }}</span>
           </template>
         </Column>
         <Column
           field="village_count"
-          header="Dedín"
+          :header="t('allianceStats.colVillages')"
           sortable
           header-class="col-head-mid"
           body-class="col-mid"
           style="width: 6rem"
         >
           <template #body="{ data }">
-            <span class="num-val">{{ data.village_count }}</span>
+            <RouterLink
+              v-if="store.serverId !== null"
+              class="stat-link num-val"
+              :to="{
+                name: 'village-stats',
+                query: {
+                  server_id: String(store.serverId),
+                  alliance_id: String(data.alliance_id),
+                },
+              }"
+            >
+              {{ data.village_count }}
+            </RouterLink>
+            <span v-else class="num-val">{{ data.village_count }}</span>
           </template>
         </Column>
         <Column
           field="total_population"
-          header="Populácia"
+          :header="t('allianceStats.colPopulation')"
           sortable
           header-class="col-head-mid"
           body-class="col-mid"
@@ -288,6 +373,23 @@ onMounted(() => {
             </div>
           </template>
         </Column>
+        <Column
+          :header="t('allianceStats.colAction')"
+          header-class="col-head-mid"
+          body-class="col-mid"
+          style="width: 3.5rem"
+        >
+          <template #body="{ data }">
+            <GameExternalEyeLink
+              :href="
+                serverGameBase
+                  ? gameAllianceUrl(serverGameBase, data.alliance_external_id)
+                  : null
+              "
+              :label="t('allianceStats.openInGameAlliance')"
+            />
+          </template>
+        </Column>
       </DataTable>
 
       <Paginator
@@ -301,7 +403,7 @@ onMounted(() => {
         class="mt-3"
         @page="onPaginatorChange"
       />
-      <p v-else class="muted mt-3">Žiadne aliancie podľa zadaných kritérií alebo ešte nie sú denné štatistiky aliancií.</p>
+      <p v-else class="muted mt-3">{{ t('allianceStats.noAlliances') }}</p>
     </template>
   </div>
 </template>
@@ -320,6 +422,7 @@ onMounted(() => {
   align-items: flex-end;
   gap: 0.75rem 1.25rem;
   width: 100%;
+  margin-bottom: 1rem;
 }
 .toolbar-fields {
   display: flex;
@@ -375,6 +478,13 @@ label {
 }
 .num-val {
   font-weight: 600;
+}
+.stat-link {
+  color: var(--p-primary-color);
+  text-decoration: none;
+}
+.stat-link:hover {
+  text-decoration: underline;
 }
 .pop-val {
   font-weight: 700;

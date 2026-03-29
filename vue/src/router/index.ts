@@ -11,20 +11,25 @@ import AdminServersView from '../views/admin/AdminServersView.vue'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/', name: 'home', component: HomeView },
-    { path: '/village-stats', name: 'village-stats', component: VillageStatsView },
+    { path: '/', name: 'home', component: HomeView, meta: { titleKey: 'meta.home' } },
+    {
+      path: '/village-stats',
+      name: 'village-stats',
+      component: VillageStatsView,
+      meta: { titleKey: 'meta.villages' },
+    },
     { path: '/inactive-finder', redirect: '/village-stats' },
     {
       path: '/alliance-stats',
       name: 'alliance-stats',
       component: AllianceStatsView,
-      meta: { title: 'Alliance stats' },
+      meta: { titleKey: 'meta.alliances' },
     },
     {
       path: '/user-stats',
       name: 'user-stats',
       component: UserStatsView,
-      meta: { title: 'User stats' },
+      meta: { titleKey: 'meta.players' },
     },
     { path: '/login', name: 'login', component: LoginView, meta: { guestOnly: true } },
     {
@@ -33,7 +38,12 @@ const router = createRouter({
       meta: { requiresAdmin: true },
       children: [
         { path: '', redirect: '/admin/servers' },
-        { path: 'servers', name: 'admin-servers', component: AdminServersView },
+        {
+          path: 'servers',
+          name: 'admin-servers',
+          component: AdminServersView,
+          meta: { titleKey: 'adminServers.pageTitle' },
+        },
       ],
     },
   ],

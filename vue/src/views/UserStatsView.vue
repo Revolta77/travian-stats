@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import Button from 'primevue/button'
 import Column from 'primevue/column'
@@ -11,10 +13,15 @@ import Tag from 'primevue/tag'
 import Paginator from 'primevue/paginator'
 import ProgressSpinner from 'primevue/progressspinner'
 import Select from 'primevue/select'
+import GameExternalEyeLink from '../components/GameExternalEyeLink.vue'
 import { api, type ServerOption, type UserStatsResponse } from '../lib/api'
+import { gameProfileUrl, trimGameBaseUrl } from '../lib/gameLinks'
 import { useUserStatsStore } from '../stores/userStats'
 
+const { t } = useI18n()
 const store = useUserStatsStore()
+const route = useRoute()
+const router = useRouter()
 
 const servers = ref<ServerOption[]>([])
 const serversLoading = ref(false)
@@ -26,6 +33,34 @@ const clientError = ref<string | null>(null)
 const validationErrors = ref<Record<string, string[]> | null>(null)
 
 const serverOptions = computed(() => servers.value.map((s) => ({ label: s.name, value: s.id })))
+
+const serverGameBase = computed(() => {
+  if (store.serverId === null) {
+    return null
+  }
+  const s = servers.value.find((x) => x.id === store.serverId)
+  return trimGameBaseUrl(s?.base_url)
+})
+
+function parseQueryPositiveInt(v: unknown): number | null {
+  const raw = Array.isArray(v) ? v[0] : v
+  if (raw === undefined || raw === null || raw === '') {
+    return null
+  }
+  const n = Number.parseInt(String(raw), 10)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function routeHasUserDeepLinkQuery(): boolean {
+  const sid = parseQueryPositiveInt(route.query.server_id)
+  if (sid === null) {
+    return false
+  }
+  return (
+    parseQueryPositiveInt(route.query.player_id) !== null ||
+    parseQueryPositiveInt(route.query.alliance_id) !== null
+  )
+}
 
 const errorText = computed(() => {
   if (clientError.value) {
@@ -47,7 +82,7 @@ function formatDateHeader(iso: string): string {
 
 function formatChange(v: number | null | undefined): string {
   if (v === null || v === undefined) {
-    return '—'
+    return t('common.emDash')
   }
   if (v > 0) {
     return `+${v}`
@@ -89,6 +124,12 @@ function userStatsQueryParams(): Record<string, string | number | boolean> {
   if (al) {
     p.alliance_filter = al
   }
+  if (store.contextPlayerId !== null) {
+    p.player_id = store.contextPlayerId
+  }
+  if (store.contextAllianceId !== null) {
+    p.alliance_id = store.contextAllianceId
+  }
   return p
 }
 
@@ -99,7 +140,7 @@ async function loadServers() {
     const { data } = await api.get<{ data: ServerOption[] }>('/servers')
     servers.value = data.data ?? []
   } catch {
-    serversError.value = 'Nepodarilo sa načítať zoznam serverov.'
+    serversError.value = t('userStats.serversLoadError')
   } finally {
     serversLoading.value = false
   }
@@ -110,18 +151,18 @@ function validateBeforeSearch(): boolean {
   validationErrors.value = null
 
   if (store.serverId === null) {
-    clientError.value = 'Vyberte server.'
+    clientError.value = t('userStats.selectServer')
     return false
   }
 
   const cx = store.coordX
   const cy = store.coordY
   if ((cx === null) !== (cy === null)) {
-    clientError.value = 'Zadajte obe súradnice X a Y, alebo ich nechajte prázdne.'
+    clientError.value = t('userStats.coordsBothOrEmpty')
     return false
   }
   if (cx !== null && cy !== null && !store.coordsOptionalValid) {
-    clientError.value = `Súradnice musia byť celé čísla v rozsahu ${-400}…${400}.`
+    clientError.value = t('userStats.coordsRange', { min: -400, max: 400 })
     return false
   }
 
@@ -149,7 +190,7 @@ async function runSearch() {
       const body = e.response.data as { errors?: Record<string, string[]> }
       validationErrors.value = body.errors ?? null
     } else {
-      clientError.value = 'Požiadavka zlyhala. Skúste znova.'
+      clientError.value = t('userStats.requestFailed')
     }
   } finally {
     loading.value = false
@@ -157,6 +198,8 @@ async function runSearch() {
 }
 
 function onSearchClick() {
+  store.contextPlayerId = null
+  store.contextAllianceId = null
   store.ensureSortCompatibleWithCoords()
   store.resetPage()
   void runSearch()
@@ -193,9 +236,41 @@ watch(
 watch(
   servers,
   (list) => {
-    if (list.length > 0 && store.serverId === null) {
+    if (list.length > 0 && store.serverId === null && !routeHasUserDeepLinkQuery()) {
       store.serverId = list[0].id
     }
+  },
+  { immediate: true },
+)
+
+async function applyDeepLinkFromRoute(): Promise<void> {
+  const sid = parseQueryPositiveInt(route.query.server_id)
+  const pid = parseQueryPositiveInt(route.query.player_id)
+  const aid = parseQueryPositiveInt(route.query.alliance_id)
+  if (sid === null) {
+    return
+  }
+  if (pid !== null) {
+    store.serverId = sid
+    store.contextPlayerId = pid
+    store.contextAllianceId = null
+  } else if (aid !== null) {
+    store.serverId = sid
+    store.contextAllianceId = aid
+    store.contextPlayerId = null
+  } else {
+    return
+  }
+  store.ensureSortCompatibleWithCoords()
+  store.resetPage()
+  await router.replace({ name: 'user-stats', query: {} })
+  await runSearch()
+}
+
+watch(
+  () => [route.query.server_id, route.query.player_id, route.query.alliance_id],
+  () => {
+    void applyDeepLinkFromRoute()
   },
   { immediate: true },
 )
@@ -208,10 +283,9 @@ onMounted(() => {
 
 <template>
   <div class="page">
-    <h1>User stats</h1>
+    <h1>{{ t('meta.players') }}</h1>
     <p class="lead">
-      Prehľad hráčov na serveri podľa celkovej populácie (posledný import) alebo podľa vzdialenosti od bodu X|Y, ak súradnice
-      vyplníte. Zmeny populácie sú za účet ako súčet z importovaných denných štatistík hráča.
+      {{ t('userStats.lead') }}
     </p>
 
     <Message v-if="serversError" severity="warn" class="mb-3" :closable="true">
@@ -220,21 +294,21 @@ onMounted(() => {
     <div class="toolbar">
       <div class="toolbar-fields">
         <div class="field">
-          <label for="usr-srv">Server</label>
+          <label for="usr-srv">{{ t('userStats.labelServer') }}</label>
           <Select
             id="usr-srv"
             v-model="store.serverId"
             :options="serverOptions"
             option-label="label"
             option-value="value"
-            placeholder="Vyberte server"
+            :placeholder="t('userStats.serverPlaceholder')"
             :loading="serversLoading"
             class="server-select"
             show-clear
           />
         </div>
         <div class="field">
-          <label for="usr-cx">X</label>
+          <label for="usr-cx">{{ t('userStats.labelX') }}</label>
           <InputNumber
             id="usr-cx"
             v-model="store.coordX"
@@ -247,7 +321,7 @@ onMounted(() => {
           />
         </div>
         <div class="field">
-          <label for="usr-cy">Y</label>
+          <label for="usr-cy">{{ t('userStats.labelY') }}</label>
           <InputNumber
             id="usr-cy"
             v-model="store.coordY"
@@ -261,8 +335,8 @@ onMounted(() => {
         </div>
       </div>
       <div class="field field-action">
-        <label class="invisible">Akcia</label>
-        <Button label="Zobraziť hráčov" icon="pi pi-users" @click="onSearchClick" />
+        <label class="invisible">{{ t('userStats.actionAria') }}</label>
+        <Button :label="t('userStats.showPlayers')" icon="pi pi-users" @click="onSearchClick" />
       </div>
     </div>
 
@@ -278,29 +352,29 @@ onMounted(() => {
       <div class="table-filters">
         <div class="table-filters-fields">
           <div class="field tf-field">
-            <label for="usr-tf-acc">Filter účtu</label>
+            <label for="usr-tf-acc">{{ t('userStats.filterAccount') }}</label>
             <InputText
               id="usr-tf-acc"
               v-model="store.tableAccountFilter"
-              placeholder="Časť mena hráča"
+              :placeholder="t('userStats.placeholderAccount')"
               class="tf-input"
               @keydown.enter.prevent="onApplyTableFilters"
             />
           </div>
           <div class="field tf-field">
-            <label for="usr-tf-al">Filter aliancie</label>
+            <label for="usr-tf-al">{{ t('userStats.filterAlliance') }}</label>
             <InputText
               id="usr-tf-al"
               v-model="store.tableAllianceFilter"
-              placeholder="Časť tagu aliancie"
+              :placeholder="t('userStats.placeholderAlliance')"
               class="tf-input"
               @keydown.enter.prevent="onApplyTableFilters"
             />
           </div>
         </div>
         <div class="field tf-action">
-          <label class="invisible">Filtre</label>
-          <Button label="Aplikovať filtre" icon="pi pi-filter" severity="secondary" @click="onApplyTableFilters" />
+          <label class="invisible">{{ t('userStats.filtersAria') }}</label>
+          <Button :label="t('userStats.applyFilters')" icon="pi pi-filter" severity="secondary" @click="onApplyTableFilters" />
         </div>
       </div>
 
@@ -315,36 +389,46 @@ onMounted(() => {
         <Column
           v-if="result.meta.has_coordinates"
           field="distance"
-          header="Vzdialenosť"
+          :header="t('userStats.colDistance')"
           sortable
           header-class="col-head-mid"
           body-class="col-mid"
           style="width: 7rem"
         >
           <template #body="{ data }">
-            <div class="dist-cell">{{ data.distance ?? '—' }}</div>
+            <div class="dist-cell">{{ data.distance ?? t('common.emDash') }}</div>
           </template>
         </Column>
-        <Column field="account.name" header="Účet" sortable body-class="col-top">
+        <Column field="account.name" :header="t('userStats.colAccount')" sortable body-class="col-mid">
           <template #body="{ data }">
             <strong>{{ data.account.name }}</strong>
           </template>
         </Column>
         <Column
           field="village_count"
-          header="Dedín"
+          :header="t('userStats.colVillages')"
           sortable
           header-class="col-head-mid"
           body-class="col-mid"
           style="width: 6rem"
         >
           <template #body="{ data }">
-            <span class="village-count-val">{{ data.village_count }}</span>
+            <RouterLink
+              v-if="store.serverId !== null"
+              class="stat-link village-count-val"
+              :to="{
+                name: 'village-stats',
+                query: { server_id: String(store.serverId), player_id: String(data.player_id) },
+              }"
+            >
+              {{ data.village_count }}
+            </RouterLink>
+            <span v-else class="village-count-val">{{ data.village_count }}</span>
           </template>
         </Column>
         <Column
           field="account.total_population"
-          header="Populácia"
+          :header="t('userStats.colPopulation')"
           sortable
           header-class="col-head-mid"
           body-class="col-mid"
@@ -354,9 +438,26 @@ onMounted(() => {
             <span class="pop-val">{{ data.account.total_population }}</span>
           </template>
         </Column>
-        <Column header="Aliancia" body-class="col-mid" style="width: 8rem">
+        <Column :header="t('userStats.colAlliance')" body-class="col-mid" style="width: 8rem">
           <template #body="{ data }">
-            <span class="alliance-tag">{{ data.alliance?.tag ?? '—' }}</span>
+            <RouterLink
+              v-if="
+                store.serverId !== null &&
+                data.alliance?.alliance_id != null &&
+                data.alliance?.tag
+              "
+              class="stat-link alliance-tag"
+              :to="{
+                name: 'alliance-stats',
+                query: {
+                  server_id: String(store.serverId),
+                  alliance_id: String(data.alliance.alliance_id),
+                },
+              }"
+            >
+              {{ data.alliance.tag }}
+            </RouterLink>
+            <span v-else class="alliance-tag">{{ data.alliance?.tag ?? t('common.emDash') }}</span>
           </template>
         </Column>
         <Column
@@ -378,6 +479,23 @@ onMounted(() => {
             </div>
           </template>
         </Column>
+        <Column
+          :header="t('userStats.colAction')"
+          header-class="col-head-mid"
+          body-class="col-mid"
+          style="width: 3.5rem"
+        >
+          <template #body="{ data }">
+            <GameExternalEyeLink
+              :href="
+                serverGameBase
+                  ? gameProfileUrl(serverGameBase, data.player_external_id)
+                  : null
+              "
+              :label="t('userStats.openInGameProfile')"
+            />
+          </template>
+        </Column>
       </DataTable>
 
       <Paginator
@@ -391,7 +509,7 @@ onMounted(() => {
         class="mt-3"
         @page="onPaginatorChange"
       />
-      <p v-else class="muted mt-3">Žiadni hráči podľa zadaných kritérií.</p>
+      <p v-else class="muted mt-3">{{ t('userStats.noPlayers') }}</p>
     </template>
   </div>
 </template>
@@ -465,9 +583,20 @@ label {
   justify-content: center;
   padding: 2rem;
 }
+.stat-link.village-count-val {
+  font-weight: 600;
+  font-size: 1rem;
+}
 .village-count-val {
   font-weight: 600;
   font-size: 1rem;
+}
+.stat-link {
+  color: var(--p-primary-color);
+  text-decoration: none;
+}
+.stat-link:hover {
+  text-decoration: underline;
 }
 .pop-val {
   font-weight: 700;

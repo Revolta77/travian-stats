@@ -1,14 +1,39 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
+import Select from 'primevue/select'
 import ToggleSwitch from 'primevue/toggleswitch'
 import { brandLogoSrc } from './lib/brandLogo'
+import { applyDocumentTitle } from './lib/documentTitle'
+import type { AppLocale } from './lib/uiStorage'
 import { useAuthStore } from './stores/auth'
 import { useUiStore } from './stores/ui'
 
+const { t, locale: i18nLocale } = useI18n()
 const route = useRoute()
 const auth = useAuthStore()
 const ui = useUiStore()
+
+const FLAGS: Record<AppLocale, string> = {
+  en: '🇬🇧',
+  de: '🇩🇪',
+  sk: '🇸🇰',
+}
+
+const languageModel = computed({
+  get: (): AppLocale => ui.locale,
+  set: (v: AppLocale) => {
+    ui.setLocale(v)
+    i18nLocale.value = v
+  },
+})
+
+const languageSelectOptions = computed(() => [
+  { value: 'en' as const, label: `${FLAGS.en} ${t('lang.en')}` },
+  { value: 'de' as const, label: `${FLAGS.de} ${t('lang.de')}` },
+  { value: 'sk' as const, label: `${FLAGS.sk} ${t('lang.sk')}` },
+])
 
 const darkMode = computed({
   get: () => ui.darkMode,
@@ -19,28 +44,64 @@ onMounted(() => {
   auth.syncFromStorage()
 })
 
+watch(
+  () => [i18nLocale.value, route.name, route.path, route.meta.titleKey] as const,
+  () => {
+    applyDocumentTitle(route, t)
+  },
+  { immediate: true },
+)
+
+watch(
+  i18nLocale,
+  (loc) => {
+    document.documentElement.lang = loc
+  },
+  { immediate: true },
+)
+
 const brandLogoUrl = brandLogoSrc()
 </script>
 
 <template>
   <div class="layout">
     <header class="header">
-      <RouterLink to="/" class="brand" aria-label="Travian Stats – úvod">
-        <img :src="brandLogoUrl" alt="Travian Stats" class="brand-logo" />
+      <RouterLink to="/" class="brand" :aria-label="t('app.ariaBrand')">
+        <img :src="brandLogoUrl" :alt="t('site.name')" class="brand-logo" />
       </RouterLink>
       <div class="header-spacer" aria-hidden="true" />
       <nav class="nav">
-        <RouterLink to="/" class="nav-link" :class="{ 'nav-link--active': route.path === '/' }">Úvod</RouterLink>
-        <RouterLink to="/village-stats" class="nav-link" active-class="nav-link--active">Village stats</RouterLink>
-        <RouterLink to="/alliance-stats" class="nav-link" active-class="nav-link--active">Alliance stats</RouterLink>
-        <RouterLink to="/user-stats" class="nav-link" active-class="nav-link--active">User stats</RouterLink>
+        <RouterLink to="/" class="nav-link" :class="{ 'nav-link--active': route.path === '/' }">
+          {{ t('nav.home') }}
+        </RouterLink>
+        <RouterLink to="/user-stats" class="nav-link" active-class="nav-link--active">
+          {{ t('nav.players') }}
+        </RouterLink>
+        <RouterLink to="/alliance-stats" class="nav-link" active-class="nav-link--active">
+          {{ t('nav.alliances') }}
+        </RouterLink>
+        <RouterLink to="/village-stats" class="nav-link" active-class="nav-link--active">
+          {{ t('nav.villages') }}
+        </RouterLink>
         <RouterLink v-if="auth.isLoggedIn" to="/admin/servers" class="nav-link" active-class="nav-link--active">
-          Admin
+          {{ t('nav.admin') }}
         </RouterLink>
       </nav>
-      <div class="theme-row">
-        <label class="theme-label" for="theme-toggle">Tmavý motív</label>
-        <ToggleSwitch id="theme-toggle" v-model="darkMode" aria-label="Prepínač tmavého motívu" />
+      <div class="header-end">
+        <div class="lang-row">
+          <Select
+            v-model="languageModel"
+            :options="languageSelectOptions"
+            option-label="label"
+            option-value="value"
+            class="lang-select"
+            :aria-label="t('app.ariaLanguage')"
+          />
+        </div>
+        <div class="theme-row">
+          <label class="theme-label" for="theme-toggle">{{ t('app.darkMode') }}</label>
+          <ToggleSwitch id="theme-toggle" v-model="darkMode" :aria-label="t('app.ariaDarkMode')" />
+        </div>
       </div>
     </header>
     <main class="main">
@@ -66,6 +127,21 @@ const brandLogoUrl = brandLogoSrc()
 }
 .header-spacer {
   flex: 1 1 auto;
+  min-width: 0;
+}
+.header-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem 1.25rem;
+  flex-shrink: 0;
+}
+.lang-row {
+  display: flex;
+  align-items: center;
+}
+.lang-select {
+  width: 10.5rem;
   min-width: 0;
 }
 .theme-row {

@@ -95,7 +95,7 @@ class MapSqlImporter
             DB::table(self::X_WORLD_TABLE)->delete();
 
             if ($progress !== null) {
-                $this->emitXWorldLoad($progress, 'Vykonávam SQL súbor do tabuľky x_world…', 0, 0);
+                $this->emitXWorldLoad($progress, 'executing_sql', [], 0, 0);
             }
 
             if ($driver === 'mysql') {
@@ -127,7 +127,8 @@ class MapSqlImporter
             if ($progress !== null) {
                 $this->emitXWorldLoad(
                     $progress,
-                    "x_world: {$totalRows} riadkov.",
+                    'x_world_loaded',
+                    ['rows' => $totalRows],
                     1,
                     $totalRows
                 );
@@ -230,7 +231,8 @@ class MapSqlImporter
                     $progress([
                         'event' => 'phase',
                         'phase' => 'aggregate',
-                        'message' => 'Agregujem denné štatistiky hráčov a aliancií…',
+                        'message_key' => 'aggregating_stats',
+                        'message_params' => new \stdClass,
                     ]);
                 }
 
@@ -263,12 +265,16 @@ class MapSqlImporter
     /**
      * @param  callable(array<string, mixed>): void  $progress
      */
-    private function emitXWorldLoad(callable $progress, string $message, int $statements, int $rows): void
+    /**
+     * @param  array<string, int|string>  $params
+     */
+    private function emitXWorldLoad(callable $progress, string $messageKey, array $params, int $statements, int $rows): void
     {
         $progress([
             'event' => 'x_world_load',
             'phase' => 'x_world_sql',
-            'message' => $message,
+            'message_key' => $messageKey,
+            'message_params' => (object) $params,
             'statements' => $statements,
             'rows' => $rows,
         ]);

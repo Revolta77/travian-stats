@@ -20,7 +20,7 @@ use Throwable;
 class AdminServerImportController extends Controller
 {
     /**
-     * @return list<string>
+     * @return list<array{key: string}>
      */
     private function snapshotImportWarnings(Server $server, string $snapshotDate): array
     {
@@ -29,7 +29,7 @@ class AdminServerImportController extends Controller
         $warnings = [];
 
         if ($snapshotDate < $today) {
-            $warnings[] = 'Importovaný dátum je skorší ako dnešný dátum — denné štatistiky (dediny, hráči, aliance) sa zapisujú na tento dátum.';
+            $warnings[] = ['key' => 'snapshot_past_date'];
         }
 
         $hasLaterVillages = VillageDailyStat::query()
@@ -57,7 +57,7 @@ class AdminServerImportController extends Controller
             ->exists();
 
         if ($hasLaterVillages || $hasLaterPlayers || $hasLaterAlliances) {
-            $warnings[] = 'V databáze už sú denné záznamy pre neskoršie dni (dediny, hráči alebo aliance) — porovnania medzi dňami a polia ako days_without_change môžu byť nekonzistentné. Odporúčame skontrolovať dáta alebo znova importovať novšie snímky.';
+            $warnings[] = ['key' => 'later_daily_records'];
         }
 
         return $warnings;
@@ -86,22 +86,22 @@ class AdminServerImportController extends Controller
 
             try {
                 if (! $server->is_active) {
-                    $emit(['event' => 'error', 'message' => 'Server je neaktívny — map.sql sa nestahuje.']);
+                    $emit(['event' => 'error', 'message_key' => 'error_server_inactive']);
 
                     return;
                 }
 
-                $emit(['event' => 'phase', 'phase' => 'download', 'message' => 'Sťahujem map.sql…']);
+                $emit(['event' => 'phase', 'phase' => 'download', 'message_key' => 'phase_download']);
 
                 $sql = $downloader->download($server);
                 if ($sql === null) {
-                    $emit(['event' => 'error', 'message' => 'Nepodarilo sa stiahnuť map.sql (base_url alebo sieť).']);
+                    $emit(['event' => 'error', 'message_key' => 'error_download_failed']);
 
                     return;
                 }
 
                 $relativePath = $archive->saveAndPrune($server, $sql);
-                $emit(['event' => 'phase', 'phase' => 'archive', 'message' => 'Uložený archív, importujem…', 'bytes' => strlen($sql)]);
+                $emit(['event' => 'phase', 'phase' => 'archive', 'message_key' => 'phase_archive', 'bytes' => strlen($sql)]);
 
                 $savedSqlPath = Storage::disk('local')->path($relativePath);
 
@@ -129,7 +129,11 @@ class AdminServerImportController extends Controller
                     'file' => $e->getFile(),
                     'line' => $e->getLine(),
                 ]);
-                $emit(['event' => 'error', 'message' => $e->getMessage()]);
+                $emit([
+                    'event' => 'error',
+                    'message_key' => 'error_exception',
+                    'detail' => $e->getMessage(),
+                ]);
             }
         }, 200, [
             'Content-Type' => 'application/x-ndjson; charset=UTF-8',
@@ -163,7 +167,7 @@ class AdminServerImportController extends Controller
                 $snapshotDate = Carbon::parse($request->validated('snapshot_date'))
                     ->toDateString();
 
-                $emit(['event' => 'phase', 'phase' => 'upload', 'message' => 'Ukladám SQL pod zvolený dátum…']);
+                $emit(['event' => 'phase', 'phase' => 'upload', 'message_key' => 'phase_upload']);
 
                 $sqlBody = '';
                 if ($request->hasFile('sql_file')) {
@@ -178,7 +182,7 @@ class AdminServerImportController extends Controller
                 }
                 $sqlBody = trim($sqlBody);
                 if ($sqlBody === '') {
-                    $emit(['event' => 'error', 'message' => 'Prázdny SQL — vlož obsah alebo nahraj súbor.']);
+                    $emit(['event' => 'error', 'message_key' => 'error_empty_sql']);
 
                     return;
                 }
@@ -187,7 +191,7 @@ class AdminServerImportController extends Controller
                 $emit([
                     'event' => 'phase',
                     'phase' => 'archive',
-                    'message' => 'Uložený archív, importujem…',
+                    'message_key' => 'phase_archive',
                     'bytes' => strlen($sqlBody),
                 ]);
 
@@ -221,7 +225,11 @@ class AdminServerImportController extends Controller
                     'file' => $e->getFile(),
                     'line' => $e->getLine(),
                 ]);
-                $emit(['event' => 'error', 'message' => $e->getMessage()]);
+                $emit([
+                    'event' => 'error',
+                    'message_key' => 'error_exception',
+                    'detail' => $e->getMessage(),
+                ]);
             }
         }, 200, [
             'Content-Type' => 'application/x-ndjson; charset=UTF-8',

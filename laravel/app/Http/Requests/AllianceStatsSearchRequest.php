@@ -22,6 +22,18 @@ class AllianceStatsSearchRequest extends FormRequest
             ],
             'page' => ['sometimes', 'integer', 'min:1', 'max:5'],
             'tag_filter' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'alliance_id' => [
+                'sometimes',
+                'nullable',
+                'integer',
+                'min:1',
+                Rule::exists('alliances', 'id')->where(function ($q): void {
+                    $sid = $this->input('server_id');
+                    if ($sid !== null && $sid !== '') {
+                        $q->where('server_id', (int) $sid);
+                    }
+                }),
+            ],
         ];
     }
 
@@ -40,6 +52,9 @@ class AllianceStatsSearchRequest extends FormRequest
             $this->merge([
                 'page' => (int) $this->input('page'),
             ]);
+        }
+        if ($this->has('alliance_id') && $this->input('alliance_id') !== null && $this->input('alliance_id') !== '') {
+            $this->merge(['alliance_id' => (int) $this->input('alliance_id')]);
         }
     }
 }
