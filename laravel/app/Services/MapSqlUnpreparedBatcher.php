@@ -11,8 +11,8 @@ use RuntimeException;
  */
 final class MapSqlUnpreparedBatcher
 {
-    /** Bezpečná rezerva pod 8 MiB limit hostingu. */
-    public const DEFAULT_MAX_BYTES = 7 * 1024 * 1024;
+    /** ~3.5 MiB na dávku (polovica pôvodného stropu) — striktnejší hostingy s nízkym max_allowed_packet. */
+    public const DEFAULT_MAX_BYTES = (7 * 1024 * 1024) / 2;
 
     /**
      * @param  callable(string): void  $execute  napr. fn (string $q) => DB::unprepared($q)
